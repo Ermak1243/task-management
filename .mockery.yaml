@@ -1,0 +1,23 @@
+with-expecter: true
+dir: "internal/mocks"
+outpkg: "mocks"
+filename: "mock_{{.InterfaceNameLower}}.go"
+all: false
+
+packages:
+  task-management/internal/service:
+    config:
+      dir: "internal/service/mocks"
+    interfaces:
+      TaskRepository:
+      TaskHistoryRepository:
+      TaskCommentRepository:
+      TaskCache:
+      TeamMembership:
+      TeamRepository:
+      TeamMemberRepository:
+      UserRepository:
+      UserLookup:
+      TeamAccess:
+      StatsRepository:
+      TransactionManager:

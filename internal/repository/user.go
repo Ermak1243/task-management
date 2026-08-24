@@ -1,0 +1,71 @@
+// Package repository реализует доступ к данным для всех доменных сущностей.
+// Каждый метод, изменяющий данные, поддерживает прозрачную передачу
+// транзакции через значение TxKey в context, установленное менеджером транзакций.
+package repository
+
+import (
+	"context"
+	"database/sql"
+
+	"task-management/internal/models"
+
+	"github.com/jmoiron/sqlx"
+)
+
+// User реализует CRUD-операции для сущности User в MySQL.
+type User struct {
+	db *sqlx.DB
+}
+
+// NewUser создаёт новый экземпляр репозитория пользователей.
+func NewUser(db *sqlx.DB) *User {
+	return &User{db: db}
+}
+
+// ByID возвращает пользователя по его ID. Если пользователь не найден,
+// возвращает (nil, nil) — отсутствие записи не считается ошибкой.
+func (u *User) ByID(ctx context.Context, id int64) (*models.User, error) {
+	var user models.User
+	err := u.db.GetContext(ctx, &user, "SELECT * FROM users WHERE id=?", id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &user, err
+}
+
+// ByEmail возвращает пользователя по email. Если запись не найдена,
+// возвращает (nil, nil).
+func (u *User) ByEmail(ctx context.Context, email string) (*models.User, error) {
+	var user models.User
+	err := u.db.GetContext(ctx, &user, "SELECT * FROM users WHERE email=?", email)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &user, err
+}
+
+// Create вставляет нового пользователя в БД. Если в context находится
+// активная транзакция (TxKey), запрос выполняется в её рамках; иначе —
+// напрямую через соединение. После вставки записывает ID в user.ID.
+func (u *User) Create(ctx context.Context, user *models.User) error {
+	var res sql.Result
+	var err error
+	if tx, ok := ctx.Value(TxKey).(*sqlx.Tx); ok {
+		res, err = tx.ExecContext(ctx,
+			"INSERT INTO users (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)",
+			user.Email, user.PasswordHash, user.Name, user.CreatedAt)
+	} else {
+		res, err = u.db.ExecContext(ctx,
+			"INSERT INTO users (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)",
+			user.Email, user.PasswordHash, user.Name, user.CreatedAt)
+	}
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	user.ID = id
+	return nil
+}

@@ -1,0 +1,645 @@
+basePath: /api/v1
+definitions:
+  task-management_internal_models.CommentRequest:
+    properties:
+      content:
+        type: string
+    required:
+    - content
+    type: object
+  task-management_internal_models.CreateTaskRequest:
+    properties:
+      assignee_id:
+        type: integer
+      description:
+        type: string
+      team_id:
+        type: integer
+      title:
+        type: string
+    required:
+    - team_id
+    - title
+    type: object
+  task-management_internal_models.CreateTeamRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
+  task-management_internal_models.InviteRequest:
+    properties:
+      role:
+        enum:
+        - admin
+        - member
+        type: string
+      user_id:
+        type: integer
+    required:
+    - user_id
+    type: object
+  task-management_internal_models.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  task-management_internal_models.RegisterRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        minLength: 6
+        type: string
+    required:
+    - email
+    - name
+    - password
+    type: object
+  task-management_internal_models.Task:
+    properties:
+      assignee_id:
+        type: integer
+      closed_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      status:
+        description: todo, in_progress, done
+        type: string
+      team_id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  task-management_internal_models.TaskComment:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      task_id:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  task-management_internal_models.TaskHistory:
+    properties:
+      changed_by:
+        type: integer
+      changes:
+        description: JSON
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      task_id:
+        type: integer
+    type: object
+  task-management_internal_models.Team:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  task-management_internal_models.TeamStats:
+    properties:
+      avg_close_time_seconds:
+        type: number
+      done:
+        type: integer
+      in_progress:
+        type: integer
+      todo:
+        type: integer
+      top_assignees:
+        items:
+          type: integer
+        type: array
+      total_comments:
+        type: integer
+    type: object
+  task-management_internal_models.UpdateRoleRequest:
+    properties:
+      role:
+        enum:
+        - admin
+        - member
+        type: string
+      user_id:
+        type: integer
+    required:
+    - user_id
+    type: object
+  task-management_internal_models.UpdateTaskRequest:
+    properties:
+      assignee_id:
+        description: nil = no change, 0 = set to NULL, >0 = set to user
+        type: integer
+      description:
+        type: string
+      status:
+        enum:
+        - todo
+        - in_progress
+        - done
+        type: string
+      title:
+        type: string
+    type: object
+  task-management_internal_models.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: API для управления задачами, командами и статистикой.
+  title: Task Management API
+  version: "1.0"
+paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Login
+      tags:
+      - auth
+  /logout:
+    post:
+      responses:
+        "204":
+          description: No Content
+      security:
+      - ApiKeyAuth: []
+      summary: Logout (client should discard token)
+      tags:
+      - auth
+  /register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Register data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/task-management_internal_models.User'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Register user
+      tags:
+      - auth
+  /tasks:
+    get:
+      parameters:
+      - description: Team ID
+        in: query
+        name: team_id
+        required: true
+        type: integer
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by assignee
+        in: query
+        name: assignee_id
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination cursor (overrides offset)
+        in: query
+        name: cursor
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/task-management_internal_models.Task'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List tasks
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Task data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/task-management_internal_models.Task'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create task
+      tags:
+      - tasks
+  /tasks/{id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update fields
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.UpdateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/task-management_internal_models.Task'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update task
+      tags:
+      - tasks
+  /tasks/{id}/comments:
+    get:
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/task-management_internal_models.TaskComment'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get task comments
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Comment content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.CommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/task-management_internal_models.TaskComment'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Add comment to task
+      tags:
+      - tasks
+  /tasks/{id}/history:
+    get:
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/task-management_internal_models.TaskHistory'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get task history
+      tags:
+      - tasks
+  /teams:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/task-management_internal_models.Team'
+            type: array
+      security:
+      - ApiKeyAuth: []
+      summary: List teams for current user
+      tags:
+      - teams
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Team name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.CreateTeamRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/task-management_internal_models.Team'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a team
+      tags:
+      - teams
+  /teams/{team_id}/invite:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Team ID
+        in: path
+        name: team_id
+        required: true
+        type: integer
+      - description: User ID and role
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.InviteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Add user to team
+      tags:
+      - teams
+  /teams/{team_id}/members/{user_id}:
+    delete:
+      parameters:
+      - description: Team ID
+        in: path
+        name: team_id
+        required: true
+        type: integer
+      - description: User ID to remove
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Remove user from team
+      tags:
+      - teams
+  /teams/{team_id}/role:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Team ID
+        in: path
+        name: team_id
+        required: true
+        type: integer
+      - description: User ID and new role
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/task-management_internal_models.UpdateRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Change user role in team
+      tags:
+      - teams
+  /teams/{team_id}/stats:
+    get:
+      parameters:
+      - description: Team ID
+        in: path
+        name: team_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/task-management_internal_models.TeamStats'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get team statistics
+      tags:
+      - stats
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

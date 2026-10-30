@@ -6,23 +6,25 @@ import (
 	"time"
 
 	"task-management/internal/models"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type TeamRepository interface {
 	ByID(ctx context.Context, id int64) (*models.Team, error)
 	ByUser(ctx context.Context, userID int64) ([]models.Team, error)
-	Create(ctx context.Context, t *models.Team) error
+	Create(ctx context.Context, tx *sqlx.Tx, t *models.Team) error
 }
 
 // TeamMemberRepository — полный контракт управления участниками команды.
 // Объявлен здесь, так как Team — основной потребитель всех пяти методов.
 // Task и Stats используют узкие подмножества (см. TeamMembership в task.go и TeamAccess в stats.go).
 type TeamMemberRepository interface {
-	Add(ctx context.Context, tm *models.TeamMember) error
-	Remove(ctx context.Context, teamID, userID int64) error
-	Role(ctx context.Context, teamID, userID int64) (string, error)
-	IsAdminOrOwner(ctx context.Context, teamID, userID int64) (bool, error)
-	UpdateRole(ctx context.Context, teamID, userID int64, role string) error
+	Add(ctx context.Context, tx *sqlx.Tx, tm *models.TeamMember) error
+	Remove(ctx context.Context, tx *sqlx.Tx, teamID, userID int64) error
+	Role(ctx context.Context, tx *sqlx.Tx, teamID, userID int64) (string, error)
+	IsAdminOrOwner(ctx context.Context, tx *sqlx.Tx, teamID, userID int64) (bool, error)
+	UpdateRole(ctx context.Context, tx *sqlx.Tx, teamID, userID int64, role string) error
 }
 
 // UserLookup — узкий контракт поиска пользователя по ID, нужный Team
@@ -59,13 +61,13 @@ func (t *Team) Create(ctx context.Context, name string, userID int64) (*models.T
 	defer cancel()
 
 	var team *models.Team
-	if err := t.txManager.RunInTransaction(ctx, func(txCtx context.Context) error {
+	if err := t.txManager.RunInTransaction(ctx, func(txCtx context.Context, tx *sqlx.Tx) error {
 		team = &models.Team{
 			Name:      name,
 			CreatedBy: userID,
 			CreatedAt: time.Now(),
 		}
-		if err := t.teamRepo.Create(txCtx, team); err != nil {
+		if err := t.teamRepo.Create(txCtx, tx, team); err != nil {
 			return err
 		}
 		member := &models.TeamMember{
@@ -73,7 +75,7 @@ func (t *Team) Create(ctx context.Context, name string, userID int64) (*models.T
 			UserID: userID,
 			Role:   "owner",
 		}
-		return t.memberRepo.Add(txCtx, member)
+		return t.memberRepo.Add(txCtx, tx, member)
 	}); err != nil {
 		return nil, err
 	}
@@ -96,7 +98,7 @@ func (t *Team) Invite(ctx context.Context, teamID, userID, inviterID int64, role
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
 
-	ok, err := t.memberRepo.IsAdminOrOwner(ctx, teamID, inviterID)
+	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, inviterID)
 	if err != nil {
 		return err
 	}
@@ -110,7 +112,7 @@ func (t *Team) Invite(ctx context.Context, teamID, userID, inviterID int64, role
 	if err != nil || u == nil {
 		return errors.New("user not found")
 	}
-	existingRole, err := t.memberRepo.Role(ctx, teamID, userID)
+	existingRole, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil {
 		return err
 	}
@@ -122,7 +124,7 @@ func (t *Team) Invite(ctx context.Context, teamID, userID, inviterID int64, role
 		UserID: userID,
 		Role:   role,
 	}
-	return t.memberRepo.Add(ctx, member)
+	return t.memberRepo.Add(ctx, nil, member)
 }
 
 // ChangeRole изменяет роль участника команды. Проверяет:
@@ -134,21 +136,21 @@ func (t *Team) ChangeRole(ctx context.Context, teamID, userID, changerID int64, 
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
 
-	ok, err := t.memberRepo.IsAdminOrOwner(ctx, teamID, changerID)
+	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, changerID)
 	if err != nil || !ok {
 		return errors.New("permission denied")
 	}
 	if newRole == "owner" {
 		return errors.New("cannot set owner role")
 	}
-	role, err := t.memberRepo.Role(ctx, teamID, userID)
+	role, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil || role == "" {
 		return errors.New("user is not a member")
 	}
 	if role == "owner" {
 		return errors.New("cannot change owner's role")
 	}
-	return t.memberRepo.UpdateRole(ctx, teamID, userID, newRole)
+	return t.memberRepo.UpdateRole(ctx, nil, teamID, userID, newRole)
 }
 
 // RemoveMember удаляет участника из команды. Проверяет:
@@ -159,11 +161,11 @@ func (t *Team) RemoveMember(ctx context.Context, teamID, userID, removerID int64
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
 
-	ok, err := t.memberRepo.IsAdminOrOwner(ctx, teamID, removerID)
+	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, removerID)
 	if err != nil || !ok {
 		return errors.New("permission denied")
 	}
-	role, err := t.memberRepo.Role(ctx, teamID, userID)
+	role, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil {
 		return err
 	}
@@ -173,5 +175,5 @@ func (t *Team) RemoveMember(ctx context.Context, teamID, userID, removerID int64
 	if role == "owner" {
 		return errors.New("cannot remove owner")
 	}
-	return t.memberRepo.Remove(ctx, teamID, userID)
+	return t.memberRepo.Remove(ctx, nil, teamID, userID)
 }

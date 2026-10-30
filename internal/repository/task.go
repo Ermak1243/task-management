@@ -61,22 +61,14 @@ func (t *Task) ListByTeam(ctx context.Context, teamID int64, status *string, ass
 	return tasks, err
 }
 
-// Create вставляет новую задачу в БД с начальным version=1.
-// Поддерживает прозрачную транзакцию через context.
-func (t *Task) Create(ctx context.Context, task *models.Task) error {
-	var res sql.Result
-	var err error
-	if tx, ok := ctx.Value(TxKey).(*sqlx.Tx); ok {
-		res, err = tx.ExecContext(ctx,
-			`INSERT INTO tasks (team_id, title, description, status, created_by, assignee_id, created_at, updated_at, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			task.TeamID, task.Title, task.Description, task.Status, task.CreatedBy, task.AssigneeID, task.CreatedAt, task.UpdatedAt, 1)
-	} else {
-		res, err = t.db.ExecContext(ctx,
-			`INSERT INTO tasks (team_id, title, description, status, created_by, assignee_id, created_at, updated_at, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			task.TeamID, task.Title, task.Description, task.Status, task.CreatedBy, task.AssigneeID, task.CreatedAt, task.UpdatedAt, 1)
-	}
+// Create вставляет новую задачу в БД с начальным version=1. Если tx != nil,
+// запрос выполняется в рамках переданной транзакции; иначе — через
+// основное соединение.
+func (t *Task) Create(ctx context.Context, tx *sqlx.Tx, task *models.Task) error {
+	res, err := executor(t.db, tx).ExecContext(ctx,
+		`INSERT INTO tasks (team_id, title, description, status, created_by, assignee_id, created_at, updated_at, version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		task.TeamID, task.Title, task.Description, task.Status, task.CreatedBy, task.AssigneeID, task.CreatedAt, task.UpdatedAt, 1)
 	if err != nil {
 		return err
 	}
@@ -91,7 +83,7 @@ func (t *Task) Create(ctx context.Context, task *models.Task) error {
 // Update обновляет задачу с оптимистичной блокировкой: WHERE id = ? AND version = ?.
 // Если rowsAffected == 0, значит версия уже изменилась (конфликт) или задача
 // не найдена — возвращается ошибка. При успешном обновлении version увеличивается на 1.
-func (t *Task) Update(ctx context.Context, task *models.Task) error {
+func (t *Task) Update(ctx context.Context, tx *sqlx.Tx, task *models.Task) error {
 	query := `UPDATE tasks SET
         title = ?,
         description = ?,
@@ -101,15 +93,8 @@ func (t *Task) Update(ctx context.Context, task *models.Task) error {
         closed_at = ?,
         version = version + 1
     WHERE id = ? AND version = ?`
-	var res sql.Result
-	var err error
-	if tx, ok := ctx.Value(TxKey).(*sqlx.Tx); ok {
-		res, err = tx.ExecContext(ctx, query,
-			task.Title, task.Description, task.Status, task.AssigneeID, task.UpdatedAt, task.ClosedAt, task.ID, task.Version)
-	} else {
-		res, err = t.db.ExecContext(ctx, query,
-			task.Title, task.Description, task.Status, task.AssigneeID, task.UpdatedAt, task.ClosedAt, task.ID, task.Version)
-	}
+	res, err := executor(t.db, tx).ExecContext(ctx, query,
+		task.Title, task.Description, task.Status, task.AssigneeID, task.UpdatedAt, task.ClosedAt, task.ID, task.Version)
 	if err != nil {
 		return err
 	}

@@ -18,19 +18,12 @@ func NewTaskHistory(db *sqlx.DB) *TaskHistory {
 	return &TaskHistory{db: db}
 }
 
-// Create записывает запись об изменении задачи. Поддерживает прозрачную
-// транзакцию через context.
-func (th *TaskHistory) Create(ctx context.Context, h *models.TaskHistory) error {
-	var err error
-	if tx, ok := ctx.Value(TxKey).(*sqlx.Tx); ok {
-		_, err = tx.ExecContext(ctx,
-			"INSERT INTO task_history (task_id, changed_by, changes, created_at) VALUES (?, ?, ?, ?)",
-			h.TaskID, h.ChangedBy, h.Changes, h.CreatedAt)
-	} else {
-		_, err = th.db.ExecContext(ctx,
-			"INSERT INTO task_history (task_id, changed_by, changes, created_at) VALUES (?, ?, ?, ?)",
-			h.TaskID, h.ChangedBy, h.Changes, h.CreatedAt)
-	}
+// Create записывает запись об изменении задачи. Если tx != nil, запрос
+// выполняется в рамках переданной транзакции; иначе — через основное соединение.
+func (th *TaskHistory) Create(ctx context.Context, tx *sqlx.Tx, h *models.TaskHistory) error {
+	_, err := executor(th.db, tx).ExecContext(ctx,
+		"INSERT INTO task_history (task_id, changed_by, changes, created_at) VALUES (?, ?, ?, ?)",
+		h.TaskID, h.ChangedBy, h.Changes, h.CreatedAt)
 	return err
 }
 

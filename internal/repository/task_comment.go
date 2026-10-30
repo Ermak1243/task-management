@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 
 	"task-management/internal/models"
 
@@ -19,20 +18,13 @@ func NewTaskComment(db *sqlx.DB) *TaskComment {
 	return &TaskComment{db: db}
 }
 
-// Create добавляет новый комментарий к задаче. Поддерживает прозрачную
-// транзакцию через context. После вставки записывает ID в c.ID.
-func (tc *TaskComment) Create(ctx context.Context, c *models.TaskComment) error {
-	var res sql.Result
-	var err error
-	if tx, ok := ctx.Value(TxKey).(*sqlx.Tx); ok {
-		res, err = tx.ExecContext(ctx,
-			"INSERT INTO task_comments (task_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
-			c.TaskID, c.UserID, c.Content, c.CreatedAt)
-	} else {
-		res, err = tc.db.ExecContext(ctx,
-			"INSERT INTO task_comments (task_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
-			c.TaskID, c.UserID, c.Content, c.CreatedAt)
-	}
+// Create добавляет новый комментарий к задаче. Если tx != nil, запрос
+// выполняется в рамках переданной транзакции; иначе — через основное
+// соединение. После вставки записывает ID в c.ID.
+func (tc *TaskComment) Create(ctx context.Context, tx *sqlx.Tx, c *models.TaskComment) error {
+	res, err := executor(tc.db, tx).ExecContext(ctx,
+		"INSERT INTO task_comments (task_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
+		c.TaskID, c.UserID, c.Content, c.CreatedAt)
 	if err != nil {
 		return err
 	}

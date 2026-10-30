@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"task-management/internal/models"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // StatsRepository — контракт получения агрегированной статистики по команде.
@@ -18,7 +20,7 @@ type StatsRepository interface {
 // который нужен сервису Stats. Объявлен здесь, так как Stats — единственный
 // потребитель подмножества IsAdminOrOwner из TeamMemberRepository.
 type TeamAccess interface {
-	IsAdminOrOwner(ctx context.Context, teamID, userID int64) (bool, error)
+	IsAdminOrOwner(ctx context.Context, tx *sqlx.Tx, teamID, userID int64) (bool, error)
 }
 
 type Stats struct {
@@ -44,7 +46,7 @@ func (s *Stats) GetTeamStats(ctx context.Context, teamID int64, userID int64) (*
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	ok, err := s.memberRepo.IsAdminOrOwner(ctx, teamID, userID)
+	ok, err := s.memberRepo.IsAdminOrOwner(ctx, nil, teamID, userID)
 	if err != nil {
 		return nil, err
 	}

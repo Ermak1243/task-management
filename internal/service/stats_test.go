@@ -25,7 +25,7 @@ func newStatsTestEnv(t *testing.T) (*service.Stats, *mocks.MockStatsRepository, 
 func TestStats_GetTeamStats(t *testing.T) {
 	t.Run("access denied", func(t *testing.T) {
 		svc, statsRepo, memberRepo := newStatsTestEnv(t)
-		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(42)).Return(false, nil)
+		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(42)).Return(false, nil)
 
 		stats, err := svc.GetTeamStats(context.Background(), 1, 42)
 
@@ -38,7 +38,7 @@ func TestStats_GetTeamStats(t *testing.T) {
 	t.Run("isAdminOrOwner error propagates", func(t *testing.T) {
 		svc, statsRepo, memberRepo := newStatsTestEnv(t)
 		repoErr := errors.New("role lookup failed")
-		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(42)).Return(false, repoErr)
+		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(42)).Return(false, repoErr)
 
 		stats, err := svc.GetTeamStats(context.Background(), 1, 42)
 
@@ -50,7 +50,7 @@ func TestStats_GetTeamStats(t *testing.T) {
 
 	t.Run("success returns repository result", func(t *testing.T) {
 		svc, statsRepo, memberRepo := newStatsTestEnv(t)
-		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(42)).Return(true, nil)
+		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(42)).Return(true, nil)
 		expected := &models.TeamStats{
 			Todo:          1,
 			InProgress:    2,
@@ -70,7 +70,7 @@ func TestStats_GetTeamStats(t *testing.T) {
 
 	t.Run("repository error propagates", func(t *testing.T) {
 		svc, statsRepo, memberRepo := newStatsTestEnv(t)
-		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(42)).Return(true, nil)
+		memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(42)).Return(true, nil)
 		repoErr := errors.New("stats query failed")
 		statsRepo.EXPECT().TeamStats(mock.Anything, int64(1)).Return(nil, repoErr)
 

@@ -1,6 +1,6 @@
 // Package repository реализует доступ к данным для всех доменных сущностей.
-// Каждый метод, изменяющий данные, поддерживает прозрачную передачу
-// транзакции через значение TxKey в context, установленное менеджером транзакций.
+// Каждый метод, изменяющий данные, принимает явный параметр tx *sqlx.Tx:
+// если он равен nil, запрос выполняется через основное соединение с БД.
 package repository
 
 import (
@@ -44,21 +44,13 @@ func (u *User) ByEmail(ctx context.Context, email string) (*models.User, error) 
 	return &user, err
 }
 
-// Create вставляет нового пользователя в БД. Если в context находится
-// активная транзакция (TxKey), запрос выполняется в её рамках; иначе —
-// напрямую через соединение. После вставки записывает ID в user.ID.
-func (u *User) Create(ctx context.Context, user *models.User) error {
-	var res sql.Result
-	var err error
-	if tx, ok := ctx.Value(TxKey).(*sqlx.Tx); ok {
-		res, err = tx.ExecContext(ctx,
-			"INSERT INTO users (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)",
-			user.Email, user.PasswordHash, user.Name, user.CreatedAt)
-	} else {
-		res, err = u.db.ExecContext(ctx,
-			"INSERT INTO users (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)",
-			user.Email, user.PasswordHash, user.Name, user.CreatedAt)
-	}
+// Create вставляет нового пользователя в БД. Если tx != nil, запрос
+// выполняется в рамках переданной транзакции; иначе — напрямую через
+// соединение. После вставки записывает ID в user.ID.
+func (u *User) Create(ctx context.Context, tx *sqlx.Tx, user *models.User) error {
+	res, err := executor(u.db, tx).ExecContext(ctx,
+		"INSERT INTO users (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)",
+		user.Email, user.PasswordHash, user.Name, user.CreatedAt)
 	if err != nil {
 		return err
 	}

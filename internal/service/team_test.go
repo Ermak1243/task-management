@@ -10,6 +10,7 @@ import (
 	"task-management/internal/models"
 	"task-management/internal/service"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -17,9 +18,9 @@ import (
 
 func runTxInline(txManager *mocks.MockTransactionManager) {
 	txManager.EXPECT().
-		RunInTransaction(mock.Anything, mock.AnythingOfType("func(context.Context) error")).
-		RunAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
-			return fn(ctx)
+		RunInTransaction(mock.Anything, mock.AnythingOfType("func(context.Context, *sqlx.Tx) error")).
+		RunAndReturn(func(ctx context.Context, fn func(context.Context, *sqlx.Tx) error) error {
+			return fn(ctx, &sqlx.Tx{})
 		})
 }
 
@@ -38,12 +39,12 @@ func TestTeam_Create(t *testing.T) {
 		runTxInline(txManager)
 
 		teamRepo.EXPECT().
-			Create(mock.Anything, mock.AnythingOfType("*models.Team")).
-			Run(func(_ context.Context, team *models.Team) { team.ID = 1 }).
+			Create(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Team")).
+			Run(func(_ context.Context, _ *sqlx.Tx, team *models.Team) { team.ID = 1 }).
 			Return(nil)
 		memberRepo.EXPECT().
-			Add(mock.Anything, mock.AnythingOfType("*models.TeamMember")).
-			Run(func(_ context.Context, tm *models.TeamMember) {
+			Add(mock.Anything, mock.Anything, mock.AnythingOfType("*models.TeamMember")).
+			Run(func(_ context.Context, _ *sqlx.Tx, tm *models.TeamMember) {
 				assert.Equal(t, int64(1), tm.TeamID)
 				assert.Equal(t, int64(42), tm.UserID)
 				assert.Equal(t, "owner", tm.Role)
@@ -63,7 +64,7 @@ func TestTeam_Create(t *testing.T) {
 
 		repoErr := errors.New("db error")
 		teamRepo.EXPECT().
-			Create(mock.Anything, mock.AnythingOfType("*models.Team")).
+			Create(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Team")).
 			Return(repoErr)
 
 		team, err := svc.Create(context.Background(), "Team A", 42)
@@ -76,12 +77,12 @@ func TestTeam_Create(t *testing.T) {
 		runTxInline(txManager)
 
 		teamRepo.EXPECT().
-			Create(mock.Anything, mock.AnythingOfType("*models.Team")).
-			Run(func(_ context.Context, team *models.Team) { team.ID = 1 }).
+			Create(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Team")).
+			Run(func(_ context.Context, _ *sqlx.Tx, team *models.Team) { team.ID = 1 }).
 			Return(nil)
 		repoErr := errors.New("member insert failed")
 		memberRepo.EXPECT().
-			Add(mock.Anything, mock.AnythingOfType("*models.TeamMember")).
+			Add(mock.Anything, mock.Anything, mock.AnythingOfType("*models.TeamMember")).
 			Return(repoErr)
 
 		team, err := svc.Create(context.Background(), "Team A", 42)
@@ -102,12 +103,12 @@ func TestTeam_Invite(t *testing.T) {
 		{
 			name: "success",
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
-				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(2)).Return(true, nil)
+				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 				userRepo.EXPECT().ByID(mock.Anything, int64(7)).Return(u, nil)
-				memberRepo.EXPECT().Role(mock.Anything, int64(1), int64(7)).Return("", nil)
+				memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(7)).Return("", nil)
 				memberRepo.EXPECT().
-					Add(mock.Anything, mock.AnythingOfType("*models.TeamMember")).
-					Run(func(_ context.Context, tm *models.TeamMember) {
+					Add(mock.Anything, mock.Anything, mock.AnythingOfType("*models.TeamMember")).
+					Run(func(_ context.Context, _ *sqlx.Tx, tm *models.TeamMember) {
 						assert.Equal(t, int64(7), tm.UserID)
 						assert.Equal(t, "member", tm.Role)
 					}).
@@ -118,7 +119,7 @@ func TestTeam_Invite(t *testing.T) {
 			name:    "permission denied",
 			wantErr: "permission denied",
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
-				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(2)).Return(false, nil)
+				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(false, nil)
 			},
 		},
 		{
@@ -126,14 +127,14 @@ func TestTeam_Invite(t *testing.T) {
 			role:    "owner",
 			wantErr: "cannot assign owner role via invite",
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
-				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(2)).Return(true, nil)
+				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 			},
 		},
 		{
 			name:    "user not found",
 			wantErr: "user not found",
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
-				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(2)).Return(true, nil)
+				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 				userRepo.EXPECT().ByID(mock.Anything, int64(7)).Return(nil, nil)
 			},
 		},
@@ -141,9 +142,9 @@ func TestTeam_Invite(t *testing.T) {
 			name:    "user already in team",
 			wantErr: "user already in team",
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
-				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(2)).Return(true, nil)
+				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 				userRepo.EXPECT().ByID(mock.Anything, int64(7)).Return(u, nil)
-				memberRepo.EXPECT().Role(mock.Anything, int64(1), int64(7)).Return("member", nil)
+				memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(7)).Return("member", nil)
 			},
 		},
 	}
@@ -169,7 +170,7 @@ func TestTeam_Invite(t *testing.T) {
 
 func TestTeam_ChangeRole_PermissionDenied(t *testing.T) {
 	svc, _, memberRepo, _, _ := newTeamTestEnv(t)
-	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(2)).Return(false, nil)
+	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(false, nil)
 
 	err := svc.ChangeRole(context.Background(), 1, 7, 2, "admin")
 	require.EqualError(t, err, "permission denied")
@@ -177,7 +178,7 @@ func TestTeam_ChangeRole_PermissionDenied(t *testing.T) {
 
 func TestTeam_RemoveMember_PermissionDenied(t *testing.T) {
 	svc, _, memberRepo, _, _ := newTeamTestEnv(t)
-	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, int64(1), int64(2)).Return(false, nil)
+	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(false, nil)
 
 	err := svc.RemoveMember(context.Background(), 1, 7, 2)
 	require.EqualError(t, err, "permission denied")

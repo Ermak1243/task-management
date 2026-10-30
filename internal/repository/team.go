@@ -39,20 +39,13 @@ func (t *Team) ByUser(ctx context.Context, userID int64) ([]models.Team, error) 
 	return teams, err
 }
 
-// Create вставляет новую команду в БД. Поддерживает прозрачную транзакцию
-// через context. После вставки записывает ID в team.ID.
-func (t *Team) Create(ctx context.Context, team *models.Team) error {
-	var res sql.Result
-	var err error
-	if tx, ok := ctx.Value(TxKey).(*sqlx.Tx); ok {
-		res, err = tx.ExecContext(ctx,
-			"INSERT INTO teams (name, created_by, created_at) VALUES (?, ?, ?)",
-			team.Name, team.CreatedBy, team.CreatedAt)
-	} else {
-		res, err = t.db.ExecContext(ctx,
-			"INSERT INTO teams (name, created_by, created_at) VALUES (?, ?, ?)",
-			team.Name, team.CreatedBy, team.CreatedAt)
-	}
+// Create вставляет новую команду в БД. Если tx != nil, запрос выполняется
+// в рамках переданной транзакции; иначе — через основное соединение.
+// После вставки записывает ID в team.ID.
+func (t *Team) Create(ctx context.Context, tx *sqlx.Tx, team *models.Team) error {
+	res, err := executor(t.db, tx).ExecContext(ctx,
+		"INSERT INTO teams (name, created_by, created_at) VALUES (?, ?, ?)",
+		team.Name, team.CreatedBy, team.CreatedAt)
 	if err != nil {
 		return err
 	}

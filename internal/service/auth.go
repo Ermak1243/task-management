@@ -8,6 +8,7 @@ import (
 	"task-management/internal/models"
 	"task-management/pkg/jwt"
 
+	"github.com/jmoiron/sqlx"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -17,7 +18,7 @@ import (
 // трёхметодный интерфейс был разбит на два узких.
 type UserRepository interface {
 	ByEmail(ctx context.Context, email string) (*models.User, error)
-	Create(ctx context.Context, u *models.User) error
+	Create(ctx context.Context, tx *sqlx.Tx, u *models.User) error
 }
 
 type Auth struct {
@@ -61,7 +62,7 @@ func (a *Auth) Register(ctx context.Context, email, password, name string) (*mod
 		Name:         name,
 		CreatedAt:    time.Now(),
 	}
-	if err := a.userRepo.Create(ctx, u); err != nil {
+	if err := a.userRepo.Create(ctx, nil, u); err != nil {
 		return nil, err
 	}
 	return u, nil

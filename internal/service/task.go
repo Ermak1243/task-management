@@ -197,6 +197,9 @@ func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskR
 			now := time.Now()
 			task.ClosedAt = &now
 		}
+		if *req.Status != "done" && task.ClosedAt != nil {
+			task.ClosedAt = nil
+		}
 		changes["status"] = map[string]string{"old": old.Status, "new": task.Status}
 	}
 	if req.AssigneeID != nil {

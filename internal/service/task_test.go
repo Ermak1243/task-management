@@ -95,20 +95,33 @@ func TestTask_Create(t *testing.T) {
 }
 
 func TestTask_Update(t *testing.T) {
+	closedAt := time.Now().Add(-time.Hour)
 	tests := []struct {
-		name     string
-		existing *models.Task
-		req      *models.UpdateTaskRequest
-		userID   int64
-		isAdmin  bool
-		wantErr  string
+		name            string
+		existing        *models.Task
+		req             *models.UpdateTaskRequest
+		userID          int64
+		isAdmin         bool
+		wantErr         string
+		wantStatus      string
+		wantClosedAtNil bool
 	}{
 		{
-			name:     "success as creator",
-			existing: &models.Task{ID: 1, TeamID: 1, Title: "old", Description: "d", Status: "todo", CreatedBy: 2, Version: 1},
-			req:      &models.UpdateTaskRequest{Status: strPtr("done")},
-			userID:   2,
-			isAdmin:  true,
+			name:       "success as creator",
+			existing:   &models.Task{ID: 1, TeamID: 1, Title: "old", Description: "d", Status: "todo", CreatedBy: 2, Version: 1},
+			req:        &models.UpdateTaskRequest{Status: strPtr("done")},
+			userID:     2,
+			isAdmin:    true,
+			wantStatus: "done",
+		},
+		{
+			name:            "assignee can reopen done task",
+			existing:        &models.Task{ID: 1, TeamID: 1, Title: "old", Description: "d", Status: "done", CreatedBy: 2, AssigneeID: intPtr(3), ClosedAt: &closedAt, Version: 1},
+			req:             &models.UpdateTaskRequest{Status: strPtr("in_progress")},
+			userID:          3,
+			isAdmin:         false,
+			wantStatus:      "in_progress",
+			wantClosedAtNil: true,
 		},
 		{
 			name:     "non member cannot update",
@@ -160,7 +173,12 @@ func TestTask_Update(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "done", task.Status)
+			assert.Equal(t, tt.wantStatus, task.Status)
+			if tt.wantClosedAtNil {
+				assert.Nil(t, task.ClosedAt)
+			} else if tt.wantStatus == "done" {
+				assert.NotNil(t, task.ClosedAt)
+			}
 		})
 	}
 }

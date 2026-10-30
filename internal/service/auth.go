@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
 	"time"
 
+	"task-management/internal/apperrors"
 	"task-management/internal/models"
 	"task-management/pkg/jwt"
 
@@ -48,7 +48,7 @@ func (a *Auth) Register(ctx context.Context, email, password, name string) (*mod
 		return nil, err
 	}
 	if existing != nil {
-		return nil, errors.New("email already registered")
+		return nil, apperrors.NewConflict("email already registered")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -77,10 +77,10 @@ func (a *Auth) Login(ctx context.Context, email, password string) (string, error
 
 	u, err := a.userRepo.ByEmail(ctx, email)
 	if err != nil || u == nil {
-		return "", errors.New("invalid credentials")
+		return "", apperrors.NewUnauthorized("invalid credentials")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-		return "", errors.New("invalid credentials")
+		return "", apperrors.NewUnauthorized("invalid credentials")
 	}
 	token, err := jwt.Generate(a.jwtCfg, u.ID)
 	if err != nil {

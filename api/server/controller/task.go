@@ -35,6 +35,7 @@ func NewTask(svc *service.Task) *Task {
 // @Param cursor query int false "Pagination cursor (overrides offset)"
 // @Success 200 {array} models.Task
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Router /tasks [get]
 func (t *Task) List(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
@@ -75,7 +76,7 @@ func (t *Task) List(c *fiber.Ctx) error {
 
 	tasks, err := t.svc.ListByTeam(c.Context(), teamID, userID, status, assigneeID, offset, limit, cursor)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(tasks)
 }
@@ -89,6 +90,7 @@ func (t *Task) List(c *fiber.Ctx) error {
 // @Param request body models.CreateTaskRequest true "Task data"
 // @Success 201 {object} models.Task
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Router /tasks [post]
 func (t *Task) Create(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
@@ -107,7 +109,7 @@ func (t *Task) Create(c *fiber.Ctx) error {
 	}
 	created, err := t.svc.Create(c.Context(), task, userID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.Status(201).JSON(created)
 }
@@ -122,6 +124,8 @@ func (t *Task) Create(c *fiber.Ctx) error {
 // @Param request body models.UpdateTaskRequest true "Update fields"
 // @Success 200 {object} models.Task
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 409 {object} map[string]string
 // @Router /tasks/{id} [put]
 func (t *Task) Update(c *fiber.Ctx) error {
@@ -141,10 +145,7 @@ func (t *Task) Update(c *fiber.Ctx) error {
 	}
 	updated, err := t.svc.Update(c.Context(), taskID, &req, userID)
 	if err != nil {
-		if err.Error() == "task version mismatch or task not found" {
-			return c.Status(409).JSON(fiber.Map{"error": "task was modified concurrently, please retry"})
-		}
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(updated)
 }
@@ -157,6 +158,8 @@ func (t *Task) Update(c *fiber.Ctx) error {
 // @Param id path int true "Task ID"
 // @Success 200 {array} models.TaskHistory
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Router /tasks/{id}/history [get]
 func (t *Task) History(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
@@ -166,7 +169,7 @@ func (t *Task) History(c *fiber.Ctx) error {
 	}
 	history, err := t.svc.History(c.Context(), taskID, userID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(history)
 }
@@ -179,6 +182,8 @@ func (t *Task) History(c *fiber.Ctx) error {
 // @Param id path int true "Task ID"
 // @Success 200 {array} models.TaskComment
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Router /tasks/{id}/comments [get]
 func (t *Task) Comments(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
@@ -188,7 +193,7 @@ func (t *Task) Comments(c *fiber.Ctx) error {
 	}
 	comments, err := t.svc.Comments(c.Context(), taskID, userID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(comments)
 }
@@ -203,6 +208,8 @@ func (t *Task) Comments(c *fiber.Ctx) error {
 // @Param request body models.CommentRequest true "Comment content"
 // @Success 201 {object} models.TaskComment
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Router /tasks/{id}/comments [post]
 func (t *Task) AddComment(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
@@ -219,7 +226,7 @@ func (t *Task) AddComment(c *fiber.Ctx) error {
 	}
 	comment, err := t.svc.AddComment(c.Context(), taskID, req.Content, userID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.Status(201).JSON(comment)
 }

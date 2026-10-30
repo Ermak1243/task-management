@@ -25,6 +25,7 @@ func NewStats(svc *service.Stats) *Stats {
 // @Param team_id path int true "Team ID"
 // @Success 200 {object} models.TeamStats
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Router /teams/{team_id}/stats [get]
 func (s *Stats) TeamStats(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
@@ -34,7 +35,7 @@ func (s *Stats) TeamStats(c *fiber.Ctx) error {
 	}
 	stats, err := s.svc.GetTeamStats(c.Context(), teamID, userID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(stats)
 }

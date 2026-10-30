@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
 	"time"
 
+	"task-management/internal/apperrors"
 	"task-management/internal/models"
 
 	"github.com/jmoiron/sqlx"
@@ -103,21 +103,21 @@ func (t *Team) Invite(ctx context.Context, teamID, userID, inviterID int64, role
 		return err
 	}
 	if !ok {
-		return errors.New("permission denied")
+		return apperrors.NewForbidden("permission denied")
 	}
 	if role == "owner" {
-		return errors.New("cannot assign owner role via invite")
+		return apperrors.NewBadRequest("cannot assign owner role via invite")
 	}
 	u, err := t.userRepo.ByID(ctx, userID)
 	if err != nil || u == nil {
-		return errors.New("user not found")
+		return apperrors.NewNotFound("user not found")
 	}
 	existingRole, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil {
 		return err
 	}
 	if existingRole != "" {
-		return errors.New("user already in team")
+		return apperrors.NewConflict("user already in team")
 	}
 	member := &models.TeamMember{
 		TeamID: teamID,
@@ -138,17 +138,17 @@ func (t *Team) ChangeRole(ctx context.Context, teamID, userID, changerID int64, 
 
 	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, changerID)
 	if err != nil || !ok {
-		return errors.New("permission denied")
+		return apperrors.NewForbidden("permission denied")
 	}
 	if newRole == "owner" {
-		return errors.New("cannot set owner role")
+		return apperrors.NewBadRequest("cannot set owner role")
 	}
 	role, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil || role == "" {
-		return errors.New("user is not a member")
+		return apperrors.NewNotFound("user is not a member")
 	}
 	if role == "owner" {
-		return errors.New("cannot change owner's role")
+		return apperrors.NewBadRequest("cannot change owner's role")
 	}
 	return t.memberRepo.UpdateRole(ctx, nil, teamID, userID, newRole)
 }
@@ -163,17 +163,17 @@ func (t *Team) RemoveMember(ctx context.Context, teamID, userID, removerID int64
 
 	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, removerID)
 	if err != nil || !ok {
-		return errors.New("permission denied")
+		return apperrors.NewForbidden("permission denied")
 	}
 	role, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil {
 		return err
 	}
 	if role == "" {
-		return errors.New("user not in team")
+		return apperrors.NewNotFound("user not in team")
 	}
 	if role == "owner" {
-		return errors.New("cannot remove owner")
+		return apperrors.NewBadRequest("cannot remove owner")
 	}
 	return t.memberRepo.Remove(ctx, nil, teamID, userID)
 }

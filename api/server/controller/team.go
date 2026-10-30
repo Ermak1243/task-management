@@ -31,6 +31,7 @@ func NewTeam(svc *service.Team) *Team {
 // @Param request body models.CreateTeamRequest true "Team name"
 // @Success 201 {object} models.Team
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Router /teams [post]
 func (t *Team) Create(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
@@ -43,7 +44,7 @@ func (t *Team) Create(c *fiber.Ctx) error {
 	}
 	team, err := t.svc.Create(c.Context(), req.Name, userID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.Status(201).JSON(team)
 }
@@ -59,7 +60,7 @@ func (t *Team) List(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
 	teams, err := t.svc.ListByUser(c.Context(), userID)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(teams)
 }
@@ -74,6 +75,9 @@ func (t *Team) List(c *fiber.Ctx) error {
 // @Param request body models.InviteRequest true "User ID and role"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
 // @Router /teams/{team_id}/invite [post]
 func (t *Team) Invite(c *fiber.Ctx) error {
 	teamID, err := strconv.ParseInt(c.Params("team_id"), 10, 64)
@@ -90,7 +94,7 @@ func (t *Team) Invite(c *fiber.Ctx) error {
 	}
 	err = t.svc.Invite(c.Context(), teamID, req.UserID, userID, req.Role)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(fiber.Map{"status": "invited"})
 }
@@ -105,6 +109,8 @@ func (t *Team) Invite(c *fiber.Ctx) error {
 // @Param request body models.UpdateRoleRequest true "User ID and new role"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Router /teams/{team_id}/role [put]
 func (t *Team) ChangeRole(c *fiber.Ctx) error {
 	teamID, err := strconv.ParseInt(c.Params("team_id"), 10, 64)
@@ -121,7 +127,7 @@ func (t *Team) ChangeRole(c *fiber.Ctx) error {
 	}
 	err = t.svc.ChangeRole(c.Context(), teamID, req.UserID, userID, req.Role)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(fiber.Map{"status": "role updated"})
 }
@@ -134,6 +140,8 @@ func (t *Team) ChangeRole(c *fiber.Ctx) error {
 // @Param user_id path int true "User ID to remove"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Router /teams/{team_id}/members/{user_id} [delete]
 func (t *Team) RemoveMember(c *fiber.Ctx) error {
 	teamID, err := strconv.ParseInt(c.Params("team_id"), 10, 64)
@@ -147,7 +155,7 @@ func (t *Team) RemoveMember(c *fiber.Ctx) error {
 	}
 	err = t.svc.RemoveMember(c.Context(), teamID, targetUserID, userID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(fiber.Map{"status": "member removed"})
 }

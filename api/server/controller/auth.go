@@ -28,6 +28,7 @@ func NewAuth(svc *service.Auth) *Auth {
 // @Param request body models.RegisterRequest true "Register data"
 // @Success 201 {object} models.User
 // @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
 // @Router /register [post]
 func (a *Auth) Register(c *fiber.Ctx) error {
 	var req models.RegisterRequest
@@ -39,7 +40,7 @@ func (a *Auth) Register(c *fiber.Ctx) error {
 	}
 	user, err := a.svc.Register(c.Context(), req.Email, req.Password, req.Name)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.Status(201).JSON(user)
 }
@@ -63,7 +64,7 @@ func (a *Auth) Login(c *fiber.Ctx) error {
 	}
 	token, err := a.svc.Login(c.Context(), req.Email, req.Password)
 	if err != nil {
-		return c.Status(401).JSON(fiber.Map{"error": err.Error()})
+		return RespondError(c, err)
 	}
 	return c.JSON(fiber.Map{"token": token})
 }

@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
+	"task-management/internal/apperrors"
 	"task-management/internal/models"
 
 	"github.com/jmoiron/sqlx"
@@ -84,7 +84,7 @@ func (t *Task) ListByTeam(ctx context.Context, teamID int64, userID int64, statu
 
 	role, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil || role == "" {
-		return nil, errors.New("user not member of team")
+		return nil, apperrors.NewForbidden("user not member of team")
 	}
 
 	cacheKey := fmt.Sprintf("tasks:team:%d:status:%v:assignee:%v:offset:%d:limit:%d:cursor:%v", teamID, status, assigneeID, offset, limit, cursor)
@@ -115,12 +115,12 @@ func (t *Task) Create(ctx context.Context, task *models.Task, userID int64) (*mo
 
 	role, err := t.memberRepo.Role(ctx, nil, task.TeamID, userID)
 	if err != nil || role == "" {
-		return nil, errors.New("user not member of team")
+		return nil, apperrors.NewForbidden("user not member of team")
 	}
 	if task.AssigneeID != nil {
 		r, err := t.memberRepo.Role(ctx, nil, task.TeamID, *task.AssigneeID)
 		if err != nil || r == "" {
-			return nil, errors.New("assignee not member of team")
+			return nil, apperrors.NewBadRequest("assignee not member of team")
 		}
 	}
 
@@ -163,7 +163,7 @@ func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskR
 
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
-		return nil, errors.New("task not found")
+		return nil, apperrors.NewNotFound("task not found")
 	}
 
 	isAdmin, err := t.memberRepo.IsAdminOrOwner(ctx, nil, task.TeamID, userID)
@@ -174,11 +174,11 @@ func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskR
 	isAssignee := task.AssigneeID != nil && *task.AssigneeID == userID
 
 	if !isAdmin && !isCreator && !isAssignee {
-		return nil, errors.New("permission denied")
+		return nil, apperrors.NewForbidden("permission denied")
 	}
 	if !isAdmin && !isCreator && isAssignee {
 		if req.Title != nil || req.Description != nil || req.AssigneeID != nil {
-			return nil, errors.New("as assignee you can only change status")
+			return nil, apperrors.NewBadRequest("as assignee you can only change status")
 		}
 	}
 
@@ -211,7 +211,7 @@ func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskR
 		} else {
 			r, err := t.memberRepo.Role(ctx, nil, task.TeamID, *req.AssigneeID)
 			if err != nil || r == "" {
-				return nil, errors.New("new assignee not member of team")
+				return nil, apperrors.NewBadRequest("new assignee not member of team")
 			}
 			task.AssigneeID = req.AssigneeID
 			changes["assignee_id"] = map[string]interface{}{"old": old.AssigneeID, "new": req.AssigneeID}
@@ -253,11 +253,11 @@ func (t *Task) History(ctx context.Context, taskID int64, userID int64) ([]model
 
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
-		return nil, errors.New("task not found")
+		return nil, apperrors.NewNotFound("task not found")
 	}
 	role, err := t.memberRepo.Role(ctx, nil, task.TeamID, userID)
 	if err != nil || role == "" {
-		return nil, errors.New("access denied")
+		return nil, apperrors.NewForbidden("access denied")
 	}
 	return t.historyRepo.ByTask(ctx, taskID)
 }
@@ -270,11 +270,11 @@ func (t *Task) Comments(ctx context.Context, taskID int64, userID int64) ([]mode
 
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
-		return nil, errors.New("task not found")
+		return nil, apperrors.NewNotFound("task not found")
 	}
 	role, err := t.memberRepo.Role(ctx, nil, task.TeamID, userID)
 	if err != nil || role == "" {
-		return nil, errors.New("access denied")
+		return nil, apperrors.NewForbidden("access denied")
 	}
 	return t.commentRepo.ByTask(ctx, taskID)
 }
@@ -287,11 +287,11 @@ func (t *Task) AddComment(ctx context.Context, taskID int64, content string, use
 
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
-		return nil, errors.New("task not found")
+		return nil, apperrors.NewNotFound("task not found")
 	}
 	role, err := t.memberRepo.Role(ctx, nil, task.TeamID, userID)
 	if err != nil || role == "" {
-		return nil, errors.New("access denied")
+		return nil, apperrors.NewForbidden("access denied")
 	}
 	comment := &models.TaskComment{
 		TaskID:    taskID,

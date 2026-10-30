@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
 	"time"
 
+	"task-management/internal/apperrors"
 	"task-management/internal/models"
 
 	"github.com/jmoiron/sqlx"
@@ -51,7 +51,7 @@ func (s *Stats) GetTeamStats(ctx context.Context, teamID int64, userID int64) (*
 		return nil, err
 	}
 	if !ok {
-		return nil, errors.New("access denied")
+		return nil, apperrors.NewForbidden("access denied")
 	}
 	return s.statsRepo.TeamStats(ctx, teamID)
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"task-management/internal/apperrors"
 	"task-management/internal/mocks"
 	"task-management/internal/models"
 	"task-management/internal/service"
@@ -90,7 +91,8 @@ func TestTask_Create(t *testing.T) {
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(42)).Return("", nil)
 
 		task, err := svc.Create(context.Background(), &models.Task{TeamID: 1}, 42)
-		require.EqualError(t, err, "user not member of team")
+		appErr := requireAppError(t, err, 403)
+		assert.Equal(t, "user not member of team", appErr.Message)
 		assert.Nil(t, task)
 	})
 }
@@ -104,6 +106,7 @@ func TestTask_Update(t *testing.T) {
 		userID          int64
 		isAdmin         bool
 		wantErr         string
+		wantErrStatus   int
 		wantStatus      string
 		wantClosedAtNil bool
 	}{
@@ -125,27 +128,30 @@ func TestTask_Update(t *testing.T) {
 			wantClosedAtNil: true,
 		},
 		{
-			name:     "non member cannot update",
-			existing: &models.Task{ID: 1, TeamID: 1, Title: "old", CreatedBy: 2},
-			req:      &models.UpdateTaskRequest{},
-			userID:   3,
-			isAdmin:  false,
-			wantErr:  "permission denied",
+			name:          "non member cannot update",
+			existing:      &models.Task{ID: 1, TeamID: 1, Title: "old", CreatedBy: 2},
+			req:           &models.UpdateTaskRequest{},
+			userID:        3,
+			isAdmin:       false,
+			wantErr:       "permission denied",
+			wantErrStatus: 403,
 		},
 		{
-			name:     "assignee can only change status",
-			existing: &models.Task{ID: 1, TeamID: 1, Title: "old", CreatedBy: 2, AssigneeID: intPtr(3)},
-			req:      &models.UpdateTaskRequest{Title: strPtr("x")},
-			userID:   3,
-			isAdmin:  false,
-			wantErr:  "as assignee you can only change status",
+			name:          "assignee can only change status",
+			existing:      &models.Task{ID: 1, TeamID: 1, Title: "old", CreatedBy: 2, AssigneeID: intPtr(3)},
+			req:           &models.UpdateTaskRequest{Title: strPtr("x")},
+			userID:        3,
+			isAdmin:       false,
+			wantErr:       "as assignee you can only change status",
+			wantErrStatus: 400,
 		},
 		{
-			name:     "task not found",
-			existing: nil,
-			req:      &models.UpdateTaskRequest{},
-			userID:   3,
-			wantErr:  "task not found",
+			name:          "task not found",
+			existing:      nil,
+			req:           &models.UpdateTaskRequest{},
+			userID:        3,
+			wantErr:       "task not found",
+			wantErrStatus: 404,
 		},
 	}
 
@@ -169,7 +175,8 @@ func TestTask_Update(t *testing.T) {
 
 			task, err := svc.Update(context.Background(), 1, tt.req, tt.userID)
 			if tt.wantErr != "" {
-				require.EqualError(t, err, tt.wantErr)
+				appErr := requireAppError(t, err, tt.wantErrStatus)
+				assert.Equal(t, tt.wantErr, appErr.Message)
 				assert.Nil(t, task)
 				return
 			}
@@ -199,13 +206,32 @@ func TestTask_Update_Rollback(t *testing.T) {
 	assert.Nil(t, task)
 }
 
+func TestTask_Update_VersionConflict(t *testing.T) {
+	svc, taskRepo, _, memberRepo, _, txManager := newTaskTestEnv(t)
+
+	existing := &models.Task{ID: 1, TeamID: 1, Title: "old", Status: "todo", CreatedBy: 2, Version: 1}
+	taskRepo.EXPECT().ByID(mock.Anything, int64(1)).Return(existing, nil)
+	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
+	runTxInline(txManager)
+	taskRepo.EXPECT().
+		Update(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Task")).
+		Return(apperrors.NewConflict("task version mismatch or task not found"))
+
+	task, err := svc.Update(context.Background(), 1, &models.UpdateTaskRequest{Title: strPtr("new")}, 2)
+
+	appErr := requireAppError(t, err, 409)
+	assert.Equal(t, "task version mismatch or task not found", appErr.Message)
+	assert.Nil(t, task)
+}
+
 func TestTask_ListByTeam(t *testing.T) {
 	t.Run("not a member", func(t *testing.T) {
 		svc, _, _, memberRepo, _, _ := newTaskTestEnv(t)
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(5)).Return("", nil)
 
 		tasks, err := svc.ListByTeam(context.Background(), 1, 5, nil, nil, 0, 10, nil)
-		require.EqualError(t, err, "user not member of team")
+		appErr := requireAppError(t, err, 403)
+		assert.Equal(t, "user not member of team", appErr.Message)
 		assert.Nil(t, tasks)
 	})
 

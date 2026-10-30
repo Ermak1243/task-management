@@ -3,8 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
+	"task-management/internal/apperrors"
 	"task-management/internal/models"
 
 	"github.com/jmoiron/sqlx"
@@ -103,7 +103,7 @@ func (t *Task) Update(ctx context.Context, tx *sqlx.Tx, task *models.Task) error
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("task version mismatch or task not found")
+		return apperrors.NewConflict("task version mismatch or task not found")
 	}
 	task.Version++
 	return nil

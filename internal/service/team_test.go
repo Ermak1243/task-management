@@ -95,10 +95,11 @@ func TestTeam_Invite(t *testing.T) {
 	u := &models.User{ID: 7, Email: "user@test.com", Name: "User"}
 
 	tests := []struct {
-		name    string
-		role    string
-		setup   func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup)
-		wantErr string
+		name       string
+		role       string
+		setup      func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup)
+		wantErr    string
+		wantStatus int
 	}{
 		{
 			name: "success",
@@ -116,31 +117,35 @@ func TestTeam_Invite(t *testing.T) {
 			},
 		},
 		{
-			name:    "permission denied",
-			wantErr: "permission denied",
+			name:       "permission denied",
+			wantErr:    "permission denied",
+			wantStatus: 403,
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
 				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(false, nil)
 			},
 		},
 		{
-			name:    "cannot assign owner role",
-			role:    "owner",
-			wantErr: "cannot assign owner role via invite",
+			name:       "cannot assign owner role",
+			role:       "owner",
+			wantErr:    "cannot assign owner role via invite",
+			wantStatus: 400,
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
 				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 			},
 		},
 		{
-			name:    "user not found",
-			wantErr: "user not found",
+			name:       "user not found",
+			wantErr:    "user not found",
+			wantStatus: 404,
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
 				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 				userRepo.EXPECT().ByID(mock.Anything, int64(7)).Return(nil, nil)
 			},
 		},
 		{
-			name:    "user already in team",
-			wantErr: "user already in team",
+			name:       "user already in team",
+			wantErr:    "user already in team",
+			wantStatus: 409,
 			setup: func(memberRepo *mocks.MockTeamMemberRepository, userRepo *mocks.MockUserLookup) {
 				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 				userRepo.EXPECT().ByID(mock.Anything, int64(7)).Return(u, nil)
@@ -160,7 +165,8 @@ func TestTeam_Invite(t *testing.T) {
 			}
 			err := svc.Invite(context.Background(), 1, 7, 2, role)
 			if tt.wantErr != "" {
-				require.EqualError(t, err, tt.wantErr)
+				appErr := requireAppError(t, err, tt.wantStatus)
+				assert.Equal(t, tt.wantErr, appErr.Message)
 			} else {
 				require.NoError(t, err)
 			}
@@ -173,7 +179,8 @@ func TestTeam_ChangeRole_PermissionDenied(t *testing.T) {
 	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(false, nil)
 
 	err := svc.ChangeRole(context.Background(), 1, 7, 2, "admin")
-	require.EqualError(t, err, "permission denied")
+	appErr := requireAppError(t, err, 403)
+	assert.Equal(t, "permission denied", appErr.Message)
 }
 
 func TestTeam_RemoveMember_PermissionDenied(t *testing.T) {
@@ -181,5 +188,6 @@ func TestTeam_RemoveMember_PermissionDenied(t *testing.T) {
 	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(false, nil)
 
 	err := svc.RemoveMember(context.Background(), 1, 7, 2)
-	require.EqualError(t, err, "permission denied")
+	appErr := requireAppError(t, err, 403)
+	assert.Equal(t, "permission denied", appErr.Message)
 }

@@ -29,7 +29,8 @@ func TestStats_GetTeamStats(t *testing.T) {
 
 		stats, err := svc.GetTeamStats(context.Background(), 1, 42)
 
-		require.EqualError(t, err, "access denied")
+		appErr := requireAppError(t, err, 403)
+		assert.Equal(t, "access denied", appErr.Message)
 		assert.Nil(t, stats)
 		statsRepo.AssertNotCalled(t, "TeamStats", mock.Anything, int64(1))
 		memberRepo.AssertExpectations(t)

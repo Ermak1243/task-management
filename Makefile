@@ -1,7 +1,7 @@
 ENV_FILE := configs/.env
 COMPOSE := docker compose --env-file $(ENV_FILE)
 
-.PHONY: help up down migrate test test-unit test-integration build clean
+.PHONY: help up down migrate test test-unit test-integration build swagger clean
 
 help:
 	@echo "Доступные команды:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make test-unit       - Запустить только unit-тесты"
 	@echo "  make test-integration- Запустить интеграционные тесты"
 	@echo "  make build           - Собрать бинарник приложения (локально)"
+	@echo "  make swagger         - Перегенерировать Swagger-документацию"
 	@echo "  make clean           - Остановить контейнеры и удалить volumes"
 
 up: down
@@ -36,6 +37,9 @@ test-integration:
 
 build:
 	go build -o bin/app ./cmd/app
+	
+swagger:
+	swag init -g cmd/app/main.go -o docs --parseDependency --parseInternal
 
 clean:
 	$(COMPOSE) down -v

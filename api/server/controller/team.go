@@ -55,6 +55,7 @@ func (t *Team) Create(c *fiber.Ctx) error {
 // @Security ApiKeyAuth
 // @Produce json
 // @Success 200 {array} models.Team
+// @Failure 500 {object} map[string]string
 // @Router /teams [get]
 func (t *Team) List(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)

@@ -1,12 +1,8 @@
-// Package repository реализует доступ к данным для всех доменных сущностей.
-// Каждый метод, изменяющий данные, принимает явный параметр tx *sqlx.Tx:
-// если он равен nil, запрос выполняется через основное соединение с БД.
 package repository
 
 import (
 	"context"
 	"database/sql"
-
 	"task-management/internal/models"
 
 	"github.com/jmoiron/sqlx"

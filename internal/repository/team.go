@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-
 	"task-management/internal/models"
 
 	"github.com/jmoiron/sqlx"
@@ -34,8 +33,8 @@ func (t *Team) ByUser(ctx context.Context, userID int64) ([]models.Team, error) 
 	var teams []models.Team
 	err := t.db.SelectContext(ctx, &teams,
 		`SELECT t.* FROM teams t
-         JOIN team_members tm ON t.id = tm.team_id
-         WHERE tm.user_id = ?`, userID)
+JOIN team_members tm ON t.id = tm.team_id
+WHERE tm.user_id = ?`, userID)
 	return teams, err
 }
 

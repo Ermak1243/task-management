@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"task-management/internal/apperrors"
-	"task-management/internal/mocks"
 	"task-management/internal/models"
 	"task-management/internal/service"
+	"task-management/internal/service/mocks"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
@@ -32,10 +32,19 @@ func newTaskTestEnv(t *testing.T) (*service.Task, *mocks.MockTaskRepository, *mo
 	return svc, taskRepo, historyRepo, memberRepo, cache, txManager
 }
 
+// runTxInline имитирует выполнение транзакции "на месте" — вызывает fn сразу,
+// передавая nil в качестве tx (так как репозитории в тестах не используют tx).
+func runTxInline(txManager *mocks.MockTransactionManager) {
+	txManager.EXPECT().
+		RunInTransaction(mock.Anything, mock.AnythingOfType("func(context.Context, *sqlx.Tx) error")).
+		RunAndReturn(func(ctx context.Context, fn func(context.Context, *sqlx.Tx) error) error {
+			return fn(ctx, nil)
+		})
+}
+
 func TestTask_Create(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		svc, taskRepo, historyRepo, memberRepo, cache, txManager := newTaskTestEnv(t)
-
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(42)).Return("member", nil)
 		runTxInline(txManager)
 		taskRepo.EXPECT().
@@ -44,7 +53,6 @@ func TestTask_Create(t *testing.T) {
 			Return(nil)
 		historyRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.AnythingOfType("*models.TaskHistory")).Return(nil)
 		cache.EXPECT().DelByPattern(mock.Anything, "tasks:team:1:*").Return(nil)
-
 		req := &models.Task{TeamID: 1, Title: "T", Description: "D"}
 		task, err := svc.Create(context.Background(), req, 42)
 		require.NoError(t, err)
@@ -52,25 +60,20 @@ func TestTask_Create(t *testing.T) {
 		assert.Equal(t, "todo", task.Status)
 		assert.Equal(t, int64(42), task.CreatedBy)
 	})
-
 	t.Run("rollback when task create fails", func(t *testing.T) {
 		svc, taskRepo, _, memberRepo, _, txManager := newTaskTestEnv(t)
-
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(42)).Return("member", nil)
 		runTxInline(txManager)
 		repoErr := errors.New("task insert failed")
 		taskRepo.EXPECT().
 			Create(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Task")).
 			Return(repoErr)
-
 		task, err := svc.Create(context.Background(), &models.Task{TeamID: 1}, 42)
 		require.ErrorIs(t, err, repoErr)
 		assert.Nil(t, task)
 	})
-
 	t.Run("rollback when history create fails", func(t *testing.T) {
 		svc, taskRepo, historyRepo, memberRepo, _, txManager := newTaskTestEnv(t)
-
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(42)).Return("member", nil)
 		runTxInline(txManager)
 		taskRepo.EXPECT().
@@ -79,17 +82,13 @@ func TestTask_Create(t *testing.T) {
 			Return(nil)
 		repoErr := errors.New("history insert failed")
 		historyRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.AnythingOfType("*models.TaskHistory")).Return(repoErr)
-
 		task, err := svc.Create(context.Background(), &models.Task{TeamID: 1}, 42)
 		require.ErrorIs(t, err, repoErr)
 		assert.Nil(t, task)
 	})
-
 	t.Run("not a member of team", func(t *testing.T) {
 		svc, _, _, memberRepo, _, _ := newTaskTestEnv(t)
-
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(42)).Return("", nil)
-
 		task, err := svc.Create(context.Background(), &models.Task{TeamID: 1}, 42)
 		appErr := requireAppError(t, err, 403)
 		assert.Equal(t, "user not member of team", appErr.Message)
@@ -154,25 +153,21 @@ func TestTask_Update(t *testing.T) {
 			wantErrStatus: 404,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc, taskRepo, historyRepo, memberRepo, cache, txManager := newTaskTestEnv(t)
-
 			if tt.existing == nil {
 				taskRepo.EXPECT().ByID(mock.Anything, int64(1)).Return(nil, nil)
 			} else {
 				taskRepo.EXPECT().ByID(mock.Anything, tt.existing.ID).Return(tt.existing, nil)
 				memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, tt.existing.TeamID, tt.userID).Return(tt.isAdmin, nil)
 			}
-
 			if tt.wantErr == "" {
 				runTxInline(txManager)
 				taskRepo.EXPECT().Update(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Task")).Return(nil)
 				historyRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.AnythingOfType("*models.TaskHistory")).Return(nil)
 				cache.EXPECT().DelByPattern(mock.Anything, "tasks:team:1:*").Return(nil)
 			}
-
 			task, err := svc.Update(context.Background(), 1, tt.req, tt.userID)
 			if tt.wantErr != "" {
 				appErr := requireAppError(t, err, tt.wantErrStatus)
@@ -193,14 +188,12 @@ func TestTask_Update(t *testing.T) {
 
 func TestTask_Update_Rollback(t *testing.T) {
 	svc, taskRepo, _, memberRepo, _, txManager := newTaskTestEnv(t)
-
 	existing := &models.Task{ID: 1, TeamID: 1, Title: "old", Status: "todo", CreatedBy: 2, Version: 1}
 	taskRepo.EXPECT().ByID(mock.Anything, int64(1)).Return(existing, nil)
 	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
 	runTxInline(txManager)
 	repoErr := errors.New("update failed")
 	taskRepo.EXPECT().Update(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Task")).Return(repoErr)
-
 	task, err := svc.Update(context.Background(), 1, &models.UpdateTaskRequest{Title: strPtr("new")}, 2)
 	require.ErrorIs(t, err, repoErr)
 	assert.Nil(t, task)
@@ -208,7 +201,6 @@ func TestTask_Update_Rollback(t *testing.T) {
 
 func TestTask_Update_VersionConflict(t *testing.T) {
 	svc, taskRepo, _, memberRepo, _, txManager := newTaskTestEnv(t)
-
 	existing := &models.Task{ID: 1, TeamID: 1, Title: "old", Status: "todo", CreatedBy: 2, Version: 1}
 	taskRepo.EXPECT().ByID(mock.Anything, int64(1)).Return(existing, nil)
 	memberRepo.EXPECT().IsAdminOrOwner(mock.Anything, mock.Anything, int64(1), int64(2)).Return(true, nil)
@@ -216,9 +208,7 @@ func TestTask_Update_VersionConflict(t *testing.T) {
 	taskRepo.EXPECT().
 		Update(mock.Anything, mock.Anything, mock.AnythingOfType("*models.Task")).
 		Return(apperrors.NewConflict("task version mismatch or task not found"))
-
 	task, err := svc.Update(context.Background(), 1, &models.UpdateTaskRequest{Title: strPtr("new")}, 2)
-
 	appErr := requireAppError(t, err, 409)
 	assert.Equal(t, "task version mismatch or task not found", appErr.Message)
 	assert.Nil(t, task)
@@ -228,25 +218,21 @@ func TestTask_ListByTeam(t *testing.T) {
 	t.Run("not a member", func(t *testing.T) {
 		svc, _, _, memberRepo, _, _ := newTaskTestEnv(t)
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(5)).Return("", nil)
-
 		tasks, err := svc.ListByTeam(context.Background(), 1, 5, nil, nil, 0, 10, nil)
 		appErr := requireAppError(t, err, 403)
 		assert.Equal(t, "user not member of team", appErr.Message)
 		assert.Nil(t, tasks)
 	})
-
 	t.Run("served from cache", func(t *testing.T) {
 		svc, _, _, memberRepo, cache, _ := newTaskTestEnv(t)
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(5)).Return("member", nil)
 		expected := []models.Task{{ID: 1, Title: "cached"}}
 		data, _ := json.Marshal(expected)
 		cache.EXPECT().Get(mock.Anything, mock.AnythingOfType("string")).Return(string(data), nil)
-
 		tasks, err := svc.ListByTeam(context.Background(), 1, 5, nil, nil, 0, 10, nil)
 		require.NoError(t, err)
 		assert.Equal(t, expected, tasks)
 	})
-
 	t.Run("cache miss queries db and stores", func(t *testing.T) {
 		svc, taskRepo, _, memberRepo, cache, _ := newTaskTestEnv(t)
 		memberRepo.EXPECT().Role(mock.Anything, mock.Anything, int64(1), int64(5)).Return("member", nil)
@@ -258,7 +244,6 @@ func TestTask_ListByTeam(t *testing.T) {
 		cache.EXPECT().
 			Set(mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("time.Duration")).
 			Return(nil)
-
 		tasks, err := svc.ListByTeam(context.Background(), 1, 5, nil, nil, 0, 10, nil)
 		require.NoError(t, err)
 		assert.Equal(t, expected, tasks)

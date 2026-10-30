@@ -37,7 +37,6 @@ type TaskCache interface {
 
 // TeamMembership — минимальный контракт для проверки участия пользователя в команде,
 // который нужен сервису Task (методы Role и IsAdminOrOwner).
-// Полный контракт управления участниками объявлен в team.go (TeamMemberRepository).
 type TeamMembership interface {
 	Role(ctx context.Context, tx *sqlx.Tx, teamID, userID int64) (string, error)
 	IsAdminOrOwner(ctx context.Context, tx *sqlx.Tx, teamID, userID int64) (bool, error)
@@ -75,18 +74,13 @@ func NewTask(
 }
 
 // ListByTeam возвращает список задач команды с фильтрацией и пагинацией.
-// Сначала проверяет, что пользователь является участником команды.
-// Результат кешируется в Redis на 5 минут; при попадании в кеш
-// возвращается десериализованная копия без обращения к БД.
 func (t *Task) ListByTeam(ctx context.Context, teamID int64, userID int64, status *string, assigneeID *int64, offset, limit int, cursor *int64) ([]models.Task, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	role, err := t.memberRepo.Role(ctx, nil, teamID, userID)
 	if err != nil || role == "" {
 		return nil, apperrors.NewForbidden("user not member of team")
 	}
-
 	cacheKey := fmt.Sprintf("tasks:team:%d:status:%v:assignee:%v:offset:%d:limit:%d:cursor:%v", teamID, status, assigneeID, offset, limit, cursor)
 	cached, err := t.cache.Get(ctx, cacheKey)
 	if err == nil {
@@ -95,7 +89,6 @@ func (t *Task) ListByTeam(ctx context.Context, teamID int64, userID int64, statu
 			return tasks, nil
 		}
 	}
-
 	tasks, err := t.taskRepo.ListByTeam(ctx, teamID, status, assigneeID, offset, limit, cursor)
 	if err != nil {
 		return nil, err
@@ -105,14 +98,10 @@ func (t *Task) ListByTeam(ctx context.Context, teamID int64, userID int64, statu
 	return tasks, nil
 }
 
-// Create создаёт новую задачу в команде. Проверяет, что создатель и назначенный
-// исполнитель (если указан) являются участниками команды. Задача создаётся
-// со статусом «todo» внутри транзакции вместе с записью в истории изменений.
-// После создания инвалидирует кеш задач команды.
+// Create создаёт новую задачу в команде.
 func (t *Task) Create(ctx context.Context, task *models.Task, userID int64) (*models.Task, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	role, err := t.memberRepo.Role(ctx, nil, task.TeamID, userID)
 	if err != nil || role == "" {
 		return nil, apperrors.NewForbidden("user not member of team")
@@ -123,12 +112,10 @@ func (t *Task) Create(ctx context.Context, task *models.Task, userID int64) (*mo
 			return nil, apperrors.NewBadRequest("assignee not member of team")
 		}
 	}
-
 	task.CreatedBy = userID
 	task.Status = "todo"
 	task.CreatedAt = time.Now()
 	task.UpdatedAt = task.CreatedAt
-
 	if err := t.txManager.RunInTransaction(ctx, func(txCtx context.Context, tx *sqlx.Tx) error {
 		if err := t.taskRepo.Create(txCtx, tx, task); err != nil {
 			return err
@@ -144,35 +131,24 @@ func (t *Task) Create(ctx context.Context, task *models.Task, userID int64) (*mo
 	}); err != nil {
 		return nil, err
 	}
-
 	t.invalidateCache(ctx, task.TeamID)
 	return task, nil
 }
 
-// Update частично обновляет задачу. Проверяет права доступа:
-//   - admin/owner — полные права;
-//   - создатель задачи — полные права;
-//   - исполнитель — может менять только статус.
-//
-// При переводе задачи в статус «done» автоматически устанавливается closed_at.
-// Все изменения фиксируются в истории (task_history) внутри транзакции.
-// Используется оптимистичная блокировка (version) для защиты от конкурентных обновлений.
+// Update частично обновляет задачу.
 func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskRequest, userID int64) (*models.Task, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
 		return nil, apperrors.NewNotFound("task not found")
 	}
-
 	isAdmin, err := t.memberRepo.IsAdminOrOwner(ctx, nil, task.TeamID, userID)
 	if err != nil {
 		return nil, err
 	}
 	isCreator := task.CreatedBy == userID
 	isAssignee := task.AssigneeID != nil && *task.AssigneeID == userID
-
 	if !isAdmin && !isCreator && !isAssignee {
 		return nil, apperrors.NewForbidden("permission denied")
 	}
@@ -181,10 +157,8 @@ func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskR
 			return nil, apperrors.NewBadRequest("as assignee you can only change status")
 		}
 	}
-
 	old := *task
 	changes := make(map[string]interface{})
-
 	if req.Title != nil {
 		task.Title = *req.Title
 		changes["title"] = map[string]string{"old": old.Title, "new": task.Title}
@@ -217,9 +191,7 @@ func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskR
 			changes["assignee_id"] = map[string]interface{}{"old": old.AssigneeID, "new": req.AssigneeID}
 		}
 	}
-
 	task.UpdatedAt = time.Now()
-
 	if err := t.txManager.RunInTransaction(ctx, func(txCtx context.Context, tx *sqlx.Tx) error {
 		if err := t.taskRepo.Update(txCtx, tx, task); err != nil {
 			return err
@@ -240,17 +212,14 @@ func (t *Task) Update(ctx context.Context, taskID int64, req *models.UpdateTaskR
 	}); err != nil {
 		return nil, err
 	}
-
 	t.invalidateCache(ctx, task.TeamID)
 	return task, nil
 }
 
-// History возвращает журнал изменений задачи. Доступ разрешён только
-// участникам команды, которой принадлежит задача.
+// History возвращает журнал изменений задачи.
 func (t *Task) History(ctx context.Context, taskID int64, userID int64) ([]models.TaskHistory, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
 		return nil, apperrors.NewNotFound("task not found")
@@ -262,12 +231,10 @@ func (t *Task) History(ctx context.Context, taskID int64, userID int64) ([]model
 	return t.historyRepo.ByTask(ctx, taskID)
 }
 
-// Comments возвращает список комментариев задачи. Доступ разрешён только
-// участникам команды, которой принадлежит задача.
+// Comments возвращает список комментариев задачи.
 func (t *Task) Comments(ctx context.Context, taskID int64, userID int64) ([]models.TaskComment, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
 		return nil, apperrors.NewNotFound("task not found")
@@ -279,12 +246,10 @@ func (t *Task) Comments(ctx context.Context, taskID int64, userID int64) ([]mode
 	return t.commentRepo.ByTask(ctx, taskID)
 }
 
-// AddComment добавляет комментарий к задаче. Проверяет, что пользователь
-// является участником команды. Возвращает созданный комментарий.
+// AddComment добавляет комментарий к задаче.
 func (t *Task) AddComment(ctx context.Context, taskID int64, content string, userID int64) (*models.TaskComment, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	task, err := t.taskRepo.ByID(ctx, taskID)
 	if err != nil || task == nil {
 		return nil, apperrors.NewNotFound("task not found")
@@ -305,8 +270,6 @@ func (t *Task) AddComment(ctx context.Context, taskID int64, content string, use
 	return comment, nil
 }
 
-// invalidateCache удаляет все закешированные списки задач команды
-// по паттерну «tasks:team:{teamID}:*».
 func (t *Task) invalidateCache(ctx context.Context, teamID int64) {
 	pattern := fmt.Sprintf("tasks:team:%d:*", teamID)
 	_ = t.cache.DelByPattern(ctx, pattern)

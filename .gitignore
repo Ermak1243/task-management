@@ -1,3 +1,6 @@
 .env
 configs/.env
 tmp/
+bin/
+coverage.out
+*.test

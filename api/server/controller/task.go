@@ -73,7 +73,6 @@ func (t *Task) List(c *fiber.Ctx) error {
 			cursor = &val
 		}
 	}
-
 	tasks, err := t.svc.ListByTeam(c.Context(), teamID, userID, status, assigneeID, offset, limit, cursor)
 	if err != nil {
 		return RespondError(c, err)

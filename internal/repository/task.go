@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-
 	"task-management/internal/apperrors"
 	"task-management/internal/models"
 
@@ -55,7 +54,6 @@ func (t *Task) ListByTeam(ctx context.Context, teamID int64, status *string, ass
 		query += " ORDER BY id LIMIT ? OFFSET ?"
 		args = append(args, limit, offset)
 	}
-
 	var tasks []models.Task
 	err := t.db.SelectContext(ctx, &tasks, query, args...)
 	return tasks, err
@@ -67,7 +65,7 @@ func (t *Task) ListByTeam(ctx context.Context, teamID int64, status *string, ass
 func (t *Task) Create(ctx context.Context, tx *sqlx.Tx, task *models.Task) error {
 	res, err := executor(t.db, tx).ExecContext(ctx,
 		`INSERT INTO tasks (team_id, title, description, status, created_by, assignee_id, created_at, updated_at, version)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.TeamID, task.Title, task.Description, task.Status, task.CreatedBy, task.AssigneeID, task.CreatedAt, task.UpdatedAt, 1)
 	if err != nil {
 		return err
@@ -85,14 +83,14 @@ func (t *Task) Create(ctx context.Context, tx *sqlx.Tx, task *models.Task) error
 // не найдена — возвращается ошибка. При успешном обновлении version увеличивается на 1.
 func (t *Task) Update(ctx context.Context, tx *sqlx.Tx, task *models.Task) error {
 	query := `UPDATE tasks SET
-        title = ?,
-        description = ?,
-        status = ?,
-        assignee_id = ?,
-        updated_at = ?,
-        closed_at = ?,
-        version = version + 1
-    WHERE id = ? AND version = ?`
+title = ?,
+description = ?,
+status = ?,
+assignee_id = ?,
+updated_at = ?,
+closed_at = ?,
+version = version + 1
+WHERE id = ? AND version = ?`
 	res, err := executor(t.db, tx).ExecContext(ctx, query,
 		task.Title, task.Description, task.Status, task.AssigneeID, task.UpdatedAt, task.ClosedAt, task.ID, task.Version)
 	if err != nil {

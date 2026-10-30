@@ -17,8 +17,6 @@ type TeamRepository interface {
 }
 
 // TeamMemberRepository — полный контракт управления участниками команды.
-// Объявлен здесь, так как Team — основной потребитель всех пяти методов.
-// Task и Stats используют узкие подмножества (см. TeamMembership в task.go и TeamAccess в stats.go).
 type TeamMemberRepository interface {
 	Add(ctx context.Context, tx *sqlx.Tx, tm *models.TeamMember) error
 	Remove(ctx context.Context, tx *sqlx.Tx, teamID, userID int64) error
@@ -27,9 +25,7 @@ type TeamMemberRepository interface {
 	UpdateRole(ctx context.Context, tx *sqlx.Tx, teamID, userID int64, role string) error
 }
 
-// UserLookup — узкий контракт поиска пользователя по ID, нужный Team
-// при проверке существования пользователя в Invite. Объявлен здесь, а не в auth.go,
-// так как Auth использует другой набор методов (см. UserRepository в auth.go).
+// UserLookup — узкий контракт поиска пользователя по ID.
 type UserLookup interface {
 	ByID(ctx context.Context, id int64) (*models.User, error)
 }
@@ -54,12 +50,9 @@ func NewTeam(teamRepo TeamRepository, memberRepo TeamMemberRepository, userRepo 
 }
 
 // Create создаёт команду и автоматически добавляет создателя как owner.
-// Обе операции (создание команды + добавление участника) выполняются
-// в одной транзакции.
 func (t *Team) Create(ctx context.Context, name string, userID int64) (*models.Team, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	var team *models.Team
 	if err := t.txManager.RunInTransaction(ctx, func(txCtx context.Context, tx *sqlx.Tx) error {
 		team = &models.Team{
@@ -89,15 +82,10 @@ func (t *Team) ListByUser(ctx context.Context, userID int64) ([]models.Team, err
 	return t.teamRepo.ByUser(ctx, userID)
 }
 
-// Invite приглашает пользователя в команду. Проверяет:
-//   - приглашающий является admin или owner;
-//   - назначаемая роль не «owner» (owner назначается только при создании);
-//   - приглашаемый пользователь существует в системе;
-//   - приглашаемый ещё не является участником команды.
+// Invite приглашает пользователя в команду.
 func (t *Team) Invite(ctx context.Context, teamID, userID, inviterID int64, role string) error {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, inviterID)
 	if err != nil {
 		return err
@@ -127,15 +115,10 @@ func (t *Team) Invite(ctx context.Context, teamID, userID, inviterID int64, role
 	return t.memberRepo.Add(ctx, nil, member)
 }
 
-// ChangeRole изменяет роль участника команды. Проверяет:
-//   - изменяющий является admin или owner;
-//   - новая роль не «owner»;
-//   - целевой пользователь является участником команды;
-//   - нельзя изменить роль owner.
+// ChangeRole изменяет роль участника команды.
 func (t *Team) ChangeRole(ctx context.Context, teamID, userID, changerID int64, newRole string) error {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, changerID)
 	if err != nil || !ok {
 		return apperrors.NewForbidden("permission denied")
@@ -153,14 +136,10 @@ func (t *Team) ChangeRole(ctx context.Context, teamID, userID, changerID int64, 
 	return t.memberRepo.UpdateRole(ctx, nil, teamID, userID, newRole)
 }
 
-// RemoveMember удаляет участника из команды. Проверяет:
-//   - удаляющий является admin или owner;
-//   - целевой пользователь является участником команды;
-//   - нельзя удалить owner.
+// RemoveMember удаляет участника из команды.
 func (t *Team) RemoveMember(ctx context.Context, teamID, userID, removerID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
-
 	ok, err := t.memberRepo.IsAdminOrOwner(ctx, nil, teamID, removerID)
 	if err != nil || !ok {
 		return apperrors.NewForbidden("permission denied")
